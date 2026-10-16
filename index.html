@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#111418">
 <title>grid-pic</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -17,37 +19,78 @@
 <main>
   <div id="stage">
     <canvas id="canvas" width="800" height="600"></canvas>
-    <p id="hint">Wybierz zdjęcie lub grafikę, aby nałożyć siatkę.</p>
+    <p id="hint">Wybierz lub przeciągnij tutaj zdjęcie albo grafikę, aby nałożyć siatkę.</p>
   </div>
 
   <section id="panel">
     <div class="row">
-      <label>Kolumny <output id="colsOut">4</output></label>
+      <label for="paper">Format papieru</label>
+      <select id="paper">
+        <option value="A8">A8</option>
+        <option value="A7">A7</option>
+        <option value="A6">A6</option>
+        <option value="A5">A5</option>
+        <option value="A4" selected>A4</option>
+        <option value="A3">A3</option>
+        <option value="custom">Własny</option>
+      </select>
+      <p id="paperInfo" class="info"></p>
+      <div class="dims">
+        <label>Szerokość (mm) <input id="pw" type="number" min="1" step="0.1" inputmode="decimal"></label>
+        <button id="swap" class="btn" type="button" title="Zamień szerokość z wysokością" aria-label="Zamień szerokość z wysokością">⇄</button>
+        <label>Wysokość (mm) <input id="ph" type="number" min="1" step="0.1" inputmode="decimal"></label>
+      </div>
+    </div>
+    <div class="row inline">
+      <label for="showDims">Pokaż wymiary jednej kratki</label>
+      <input id="showDims" type="checkbox">
+    </div>
+    <hr>
+    <div class="row">
+      <label>Kolumny <output id="colsOut"></output></label>
       <input id="cols" type="range" min="1" max="40" value="4">
     </div>
     <div class="row">
-      <label>Rzędy <output id="rowsOut">4</output></label>
+      <label>Rzędy <output id="rowsOut"></output></label>
       <input id="rows" type="range" min="1" max="40" value="4">
     </div>
     <div class="row">
-      <label>Grubość linii <output id="thickOut">2</output></label>
+      <label>Grubość linii <output id="thickOut"></output></label>
       <input id="thick" type="range" min="1" max="20" value="2">
     </div>
     <div class="row inline">
       <label for="color">Kolor siatki</label>
-      <input id="color" type="color" value="#ffffff">
+      <span class="colorpick"><i id="swatch"></i>
+        <select id="color">
+          <option value="#ffffff">Biały</option>
+          <option value="#000000">Czarny</option>
+          <option value="#ff2d2d">Czerwony</option>
+          <option value="#ffe600">Żółty</option>
+          <option value="#00e5ff">Turkusowy</option>
+          <option value="#ff2dd4">Różowy</option>
+        </select>
+      </span>
     </div>
     <div class="row inline">
       <label for="labels">Oznaczenia kratek (A1, B1…)</label>
       <input id="labels" type="checkbox">
     </div>
+    <hr>
     <div class="row inline">
       <label for="gray">Skala szarości</label>
       <input id="gray" type="checkbox">
     </div>
     <div class="row">
-      <label>Kontrast <output id="contrastOut">0</output></label>
+      <label>Kontrast <output id="contrastOut"></output></label>
       <input id="contrast" type="range" min="-100" max="100" value="0">
+    </div>
+    <div class="row">
+      <label>Jasność <output id="brightnessOut"></output></label>
+      <input id="brightness" type="range" min="-100" max="100" value="0">
+    </div>
+    <div class="row">
+      <label>Nasycenie <output id="saturationOut"></output></label>
+      <input id="saturation" type="range" min="-100" max="100" value="0">
     </div>
     <div class="actions">
       <button id="reset" class="btn">Resetuj</button>

@@ -2,11 +2,15 @@
   const MAX_SIDE = 4096;
   const $ = id => document.getElementById(id);
   const canvas = $('canvas'), ctx = canvas.getContext('2d');
-  const ids = ['cols', 'rows', 'thick', 'contrast'];
-  const defaults = { cols: 4, rows: 4, thick: 2, contrast: 0, color: '#ffffff', labels: false, gray: false };
+  const sliders = ['cols', 'rows', 'thick', 'contrast', 'brightness', 'saturation'];
+  const PAPERS = { A8: [52, 74], A7: [74, 105], A6: [105, 148], A5: [148, 210], A4: [210, 297], A3: [297, 420] };
+  const defaults = {
+    cols: 4, rows: 4, thick: 2, contrast: 0, brightness: 0, saturation: 0,
+    color: '#ffffff', labels: false, gray: false, showDims: false, paper: 'A4'
+  };
 
   let img = null;      // source image element
-  let base = null;     // canvas holding the processed (scaled/grey/contrast) image
+  let base = null;     // canvas with the processed (scaled/grey/tone-adjusted) image
   let saveName = 'grid-pic';
 
   const colName = n => { // 0 -> A, 25 -> Z, 26 -> AA
@@ -14,7 +18,41 @@
     for (n++; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + (n - 1) % 26) + s;
     return s;
   };
+  const fmt = v => String(Math.round(v * 10) / 10).replace('.', ',');
 
+  /* ---------- paper ---------- */
+  const paper = () => ({ w: +$('pw').value, h: +$('ph').value });
+
+  function setPaper(w, h) { $('pw').value = w; $('ph').value = h; }
+
+  function updatePaperInfo() {
+    const { w, h } = paper();
+    const name = $('paper').value === 'custom' ? 'Własny' : $('paper').value;
+    const cols = +$('cols').value, rows = +$('rows').value;
+    $('paperInfo').innerHTML =
+      `<b>${name}</b>: wysokość ${fmt(h)} mm × szerokość ${fmt(w)} mm<br>` +
+      `Jedna kratka: ${fmt(w / cols)} × ${fmt(h / rows)} mm`;
+  }
+
+  $('paper').addEventListener('change', () => {
+    const p = PAPERS[$('paper').value];
+    if (p) setPaper(...p);
+    updatePaperInfo(); draw();
+  });
+  ['pw', 'ph'].forEach(id => $(id).addEventListener('input', () => {
+    if (!(+$(id).value > 0)) return;
+    $('paper').value = 'custom';   // temporary custom size, not persisted
+    updatePaperInfo(); draw();
+  }));
+  $('swap').addEventListener('click', () => {
+    const { w, h } = paper();
+    setPaper(h, w);
+    const match = Object.entries(PAPERS).find(([, [a, b]]) => a === h && b === w);
+    $('paper').value = match ? match[0] : 'custom';
+    updatePaperInfo(); draw();
+  });
+
+  /* ---------- image processing ---------- */
   function buildBase() {
     if (!img) return;
     const scale = Math.min(1, MAX_SIDE / Math.max(img.naturalWidth, img.naturalHeight));
@@ -24,18 +62,44 @@
     const b = base.getContext('2d', { willReadFrequently: true });
     b.drawImage(img, 0, 0, w, h);
     const gray = $('gray').checked, c = +$('contrast').value;
-    if (gray || c !== 0) {
+    const br = +$('brightness').value * 2.55, sat = 1 + +$('saturation').value / 100;
+    if (gray || c !== 0 || br !== 0 || sat !== 1) {
       const d = b.getImageData(0, 0, w, h), p = d.data;
       const f = (259 * (c + 255)) / (255 * (259 - c));
       for (let i = 0; i < p.length; i += 4) {
         let r = p[i], g = p[i + 1], bl = p[i + 2];
         if (gray) r = g = bl = 0.299 * r + 0.587 * g + 0.114 * bl;
-        p[i] = f * (r - 128) + 128;
-        p[i + 1] = f * (g - 128) + 128;
-        p[i + 2] = f * (bl - 128) + 128;
+        else if (sat !== 1) {
+          const l = 0.299 * r + 0.587 * g + 0.114 * bl;
+          r = l + (r - l) * sat; g = l + (g - l) * sat; bl = l + (bl - l) * sat;
+        }
+        p[i] = f * (r + br - 128) + 128;
+        p[i + 1] = f * (g + br - 128) + 128;
+        p[i + 2] = f * (bl + br - 128) + 128;
       }
       b.putImageData(d, 0, 0);
     }
+  }
+
+  /* ---------- drawing ---------- */
+  function dimensionLine(x1, y1, x2, y2, color, outline, lw) {
+    const cap = lw * 3, vert = x1 === x2;
+    const path = () => {
+      ctx.beginPath();
+      ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+      if (vert) { ctx.moveTo(x1 - cap, y1); ctx.lineTo(x1 + cap, y1); ctx.moveTo(x2 - cap, y2); ctx.lineTo(x2 + cap, y2); }
+      else { ctx.moveTo(x1, y1 - cap); ctx.lineTo(x1, y1 + cap); ctx.moveTo(x2, y2 - cap); ctx.lineTo(x2, y2 + cap); }
+      ctx.stroke();
+    };
+    ctx.lineCap = 'butt';
+    ctx.strokeStyle = outline; ctx.lineWidth = lw * 2.4; path();
+    ctx.strokeStyle = color; ctx.lineWidth = lw; path();
+  }
+
+  function outlinedText(t, x, y, fs, color, outline) {
+    ctx.lineWidth = fs * 0.22;
+    ctx.strokeStyle = outline; ctx.strokeText(t, x, y);
+    ctx.fillStyle = color; ctx.fillText(t, x, y);
   }
 
   function draw() {
@@ -46,55 +110,68 @@
     const cols = +$('cols').value, rows = +$('rows').value;
     const lw = Math.max(1, Math.round(+$('thick').value * Math.max(w, h) / 1000));
     const color = $('color').value;
+    const n = parseInt(color.slice(1), 16);
+    const lum = 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+    const outline = lum > 140 ? '#000' : '#fff';
     ctx.fillStyle = color;
-    for (let i = 0; i <= cols; i++) {
-      const x = Math.round(i * (w - lw) / cols);
-      ctx.fillRect(x, 0, lw, h);
-    }
-    for (let j = 0; j <= rows; j++) {
-      const y = Math.round(j * (h - lw) / rows);
-      ctx.fillRect(0, y, w, lw);
-    }
+    for (let i = 0; i <= cols; i++) ctx.fillRect(Math.round(i * (w - lw) / cols), 0, lw, h);
+    for (let j = 0; j <= rows; j++) ctx.fillRect(0, Math.round(j * (h - lw) / rows), w, lw);
+
+    const cw = w / cols, ch = h / rows;
+    ctx.lineJoin = 'round';
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
     if ($('labels').checked) {
-      const cw = w / cols, ch = h / rows;
       const fs = Math.max(10, Math.min(cw, ch) * 0.2);
       ctx.font = `600 ${fs}px system-ui, sans-serif`;
-      ctx.textBaseline = 'top';
-      ctx.lineJoin = 'round';
-      ctx.lineWidth = fs * 0.22;
-      const n = parseInt(color.slice(1), 16);
-      const lum = 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
-      ctx.strokeStyle = lum > 140 ? '#000' : '#fff';
       const pad = lw + fs * 0.25;
       for (let j = 0; j < rows; j++)
-        for (let i = 0; i < cols; i++) {
-          const t = colName(i) + (j + 1);
-          ctx.strokeText(t, i * cw + pad, j * ch + pad);
-          ctx.fillText(t, i * cw + pad, j * ch + pad);
-        }
+        for (let i = 0; i < cols; i++)
+          outlinedText(colName(i) + (j + 1), i * cw + pad, j * ch + pad, fs, color, outline);
+    }
+    if ($('showDims').checked) {
+      // dimensions of the top-left cell, drawn with dimension lines
+      const { w: pw, h: ph } = paper();
+      const fs = Math.max(10, Math.min(cw, ch) * 0.13);
+      const dl = Math.max(1.5, fs * 0.08);
+      const m = Math.max(lw + 2, fs * 0.6);
+      const yl = ch * 0.72, xl = cw * 0.72;
+      dimensionLine(m, yl, cw - m, yl, color, outline, dl);
+      dimensionLine(xl, m, xl, ch - m, color, outline, dl);
+      ctx.font = `600 ${fs}px system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      outlinedText(fmt(pw / cols) + ' mm', (m + cw - m) / 2, yl - fs * 0.35, fs, color, outline);
+      ctx.save();
+      ctx.translate(xl - fs * 0.35, (m + ch - m) / 2);
+      ctx.rotate(-Math.PI / 2);
+      outlinedText(fmt(ph / rows) + ' mm', 0, 0, fs, color, outline);
+      ctx.restore();
     }
   }
 
-  function syncOutputs() {
-    ids.forEach(id => $(id + 'Out').textContent = $(id).value);
-  }
+  /* ---------- controls ---------- */
+  const syncOutputs = () => sliders.forEach(id => $(id + 'Out').textContent = $(id).value);
+  const syncSwatch = () => { $('swatch').style.background = $('color').value; };
+  const redraw = () => { syncOutputs(); updatePaperInfo(); draw(); };
+  const rebuild = () => { syncOutputs(); buildBase(); draw(); };
 
-  ['cols', 'rows', 'thick', 'color', 'labels'].forEach(id =>
-    $(id).addEventListener('input', () => { syncOutputs(); draw(); }));
-  ['gray', 'contrast'].forEach(id =>
-    $(id).addEventListener('input', () => { syncOutputs(); buildBase(); draw(); }));
+  ['cols', 'rows', 'thick', 'labels', 'showDims'].forEach(id => $(id).addEventListener('input', redraw));
+  $('color').addEventListener('input', () => { syncSwatch(); draw(); });
+  ['gray', 'contrast', 'brightness', 'saturation'].forEach(id => $(id).addEventListener('input', rebuild));
 
   $('reset').addEventListener('click', () => {
     for (const [k, v] of Object.entries(defaults)) {
       const el = $(k);
       if (typeof v === 'boolean') el.checked = v; else el.value = v;
     }
-    syncOutputs(); buildBase(); draw();
+    setPaper(...PAPERS.A4);
+    syncSwatch(); updatePaperInfo(); rebuild();
   });
 
-  $('file').addEventListener('change', e => {
-    const f = e.target.files[0];
-    if (!f) return;
+  /* ---------- loading files ---------- */
+  function loadFile(f) {
+    if (!f || !f.type.startsWith('image/')) return;
     saveName = f.name.replace(/\.[^.]+$/, '') + '-grid';
     const url = URL.createObjectURL(f);
     const im = new Image();
@@ -107,8 +184,23 @@
     };
     im.onerror = () => { URL.revokeObjectURL(url); alert('Nie udało się wczytać tego pliku.'); };
     im.src = url;
+  }
+
+  $('file').addEventListener('change', e => { loadFile(e.target.files[0]); e.target.value = ''; });
+
+  // drag & drop anywhere in the window
+  let depth = 0;
+  const hasFiles = e => e.dataTransfer && [...e.dataTransfer.types].includes('Files');
+  window.addEventListener('dragenter', e => { if (!hasFiles(e)) return; e.preventDefault(); depth++; document.body.classList.add('dragging'); });
+  window.addEventListener('dragover', e => { if (hasFiles(e)) e.preventDefault(); });
+  window.addEventListener('dragleave', e => { if (!hasFiles(e)) return; if (--depth <= 0) { depth = 0; document.body.classList.remove('dragging'); } });
+  window.addEventListener('drop', e => {
+    if (!hasFiles(e)) return;
+    e.preventDefault(); depth = 0; document.body.classList.remove('dragging');
+    loadFile([...e.dataTransfer.files].find(f => f.type.startsWith('image/')));
   });
 
+  /* ---------- saving ---------- */
   $('save').addEventListener('click', () => {
     canvas.toBlob(async blob => {
       if (!blob) return;
@@ -126,5 +218,6 @@
     }, 'image/png');
   });
 
-  syncOutputs();
+  setPaper(...PAPERS.A4);
+  syncSwatch(); syncOutputs(); updatePaperInfo();
 })();
