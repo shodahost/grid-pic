@@ -83,20 +83,6 @@
   }
 
   /* ---------- drawing ---------- */
-  function dimensionLine(x1, y1, x2, y2, color, outline, lw) {
-    const cap = lw * 3, vert = x1 === x2;
-    const path = () => {
-      ctx.beginPath();
-      ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
-      if (vert) { ctx.moveTo(x1 - cap, y1); ctx.lineTo(x1 + cap, y1); ctx.moveTo(x2 - cap, y2); ctx.lineTo(x2 + cap, y2); }
-      else { ctx.moveTo(x1, y1 - cap); ctx.lineTo(x1, y1 + cap); ctx.moveTo(x2, y2 - cap); ctx.lineTo(x2, y2 + cap); }
-      ctx.stroke();
-    };
-    ctx.lineCap = 'butt';
-    ctx.strokeStyle = outline; ctx.lineWidth = lw * 2.4; path();
-    ctx.strokeStyle = color; ctx.lineWidth = lw; path();
-  }
-
   function outlinedText(t, x, y, fs, color, outline) {
     ctx.lineWidth = fs * 0.22;
     ctx.strokeStyle = outline; ctx.strokeText(t, x, y);
@@ -141,21 +127,20 @@
           outlinedText(colName(i) + (j + 1), i * cw + pad, j * ch + pad, fs, color, outline);
     }
     if ($('showDims').checked) {
-      // dimensions of the top-left cell, drawn with dimension lines
-      const fs = Math.max(10, Math.min(cw, ch) * 0.13);
-      const dl = Math.max(1.5, fs * 0.08);
-      const m = Math.max(lw + 2, fs * 0.6);
-      const yl = ch * 0.72, xl = cw * 0.72;
-      dimensionLine(m, yl, cw - m, yl, color, outline, dl);
-      dimensionLine(xl, m, xl, ch - m, color, outline, dl);
+      // values of the top-left cell, written along its bottom and right edges (clear of the A1 label)
+      const tw = fmt(pw / cols) + ' mm', th = fmt(ph / rows) + ' mm';
+      let fs = Math.max(12, Math.min(cw, ch) * 0.14);
       ctx.font = `600 ${fs}px system-ui, sans-serif`;
+      const need = Math.max(ctx.measureText(tw).width / cw, ctx.measureText(th).width / ch);
+      if (need > 0.7) { fs = Math.max(8, fs * 0.7 / need); ctx.font = `600 ${fs}px system-ui, sans-serif`; }
+      const gap = lw + fs * 0.3;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'bottom';
-      outlinedText(fmt(pw / cols) + ' mm', cw / 2, yl - fs * 0.35, fs, color, outline);
+      outlinedText(tw, cw / 2, ch - gap, fs, color, outline);
       ctx.save();
-      ctx.translate(xl - fs * 0.35, ch / 2);
+      ctx.translate(cw - gap, ch / 2);
       ctx.rotate(-Math.PI / 2);
-      outlinedText(fmt(ph / rows) + ' mm', 0, 0, fs, color, outline);
+      outlinedText(th, 0, 0, fs, color, outline);
       ctx.restore();
     }
     ctx.restore();
