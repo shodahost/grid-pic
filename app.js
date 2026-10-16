@@ -15,7 +15,6 @@
   // grid position as a fraction (0..1) of the free space inside the image
   let fx = 0.5, fy = 0.5;
   let view = { s: 1, tx: 0, ty: 0 };  // zoom/pan of the preview only (not saved)
-  let mode = 'grid';                  // what one finger does: grid | view
 
   const colName = n => { // 0 -> A, 25 -> Z, 26 -> AA
     let s = '';
@@ -172,7 +171,7 @@
   $('align').addEventListener('click', e => { if (e.target.dataset.pos) setAlign(e.target.dataset.pos); });
 
   $('reset').addEventListener('click', () => {
-    setAlign('center'); resetView(); setMode('grid');
+    setAlign('center'); resetView();
     for (const [k, v] of Object.entries(defaults)) {
       const el = $(k);
       if (typeof v === 'boolean') el.checked = v; else el.value = v;
@@ -231,12 +230,6 @@
     view.s = s2; view.tx = cx - px * view.s; view.ty = cy - py * view.s;
     applyView();
   }
-  function setMode(m) {
-    mode = m;
-    document.querySelectorAll('#mode .btn').forEach(b => b.classList.toggle('active', b.dataset.mode === m));
-    vp.classList.toggle('pan', m === 'view');
-  }
-  $('mode').addEventListener('click', e => { if (e.target.dataset.mode) setMode(e.target.dataset.mode); });
   const zoomCenter = f => zoomAt(canvas.offsetWidth / 2, canvas.offsetHeight / 2, Math.min(8, Math.max(1, view.s * f)));
   $('zoomIn').addEventListener('click', () => zoomCenter(1.5));
   $('zoomOut').addEventListener('click', () => zoomCenter(1 / 1.5));
@@ -250,20 +243,26 @@
     zoomAt(p.x, p.y, Math.min(8, Math.max(1, view.s * Math.exp(-e.deltaY * 0.0015))));
   }, { passive: false });
 
+  vp.addEventListener('contextmenu', e => e.preventDefault());
   const ptrs = new Map();
   let drag = null, pinch = null, raf = 0;
   const redraw1 = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); };
-  const startDrag = (p) => {
+  const startDrag = (p, pan = false) => {
     if (!base) return;
     const { gw, gh } = gridSize(base.width, base.height);
-    drag = { x: p.x, y: p.y, gx: fx * (base.width - gw), gy: fy * (base.height - gh),
+    drag = { pan, x: p.x, y: p.y, gx: fx * (base.width - gw), gy: fy * (base.height - gh),
              vx: view.tx, vy: view.ty };
   };
   vp.addEventListener('pointerdown', e => {
     if (!base) return;
     vp.setPointerCapture(e.pointerId);
     ptrs.set(e.pointerId, local(e));
-    if (ptrs.size === 1) startDrag(ptrs.get(e.pointerId));
+    if (ptrs.size === 1) {
+      // mouse: right/middle button or Shift pans the zoomed view; otherwise the grid is dragged
+      const pan = e.pointerType === 'mouse' && (e.button !== 0 || e.shiftKey);
+      startDrag(ptrs.get(e.pointerId), pan);
+      vp.classList.toggle('panning', pan);
+    }
     else if (ptrs.size === 2) {
       drag = null;
       const [a, b] = [...ptrs.values()];
@@ -284,7 +283,7 @@
       applyView();
     } else if (drag) {
       const dx = p.x - drag.x, dy = p.y - drag.y;
-      if (mode === 'view') {
+      if (drag.pan) {
         view.tx = drag.vx + dx; view.ty = drag.vy + dy; applyView();
       } else {
         const f = canvas.width / (canvas.offsetWidth * view.s);   // preview px -> image px
@@ -301,6 +300,7 @@
     ptrs.delete(e.pointerId);
     pinch = null;
     drag = null;
+    vp.classList.remove('panning');
     if (ptrs.size === 1) startDrag(ptrs.values().next().value);  // continue with the remaining finger
   };
   vp.addEventListener('pointerup', endPtr);
