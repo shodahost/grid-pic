@@ -43,3 +43,6 @@ body.dragging::after{content:"Upuść obraz tutaj";position:fixed;inset:8px;bord
   #stage{position:sticky;top:0;z-index:2;background:var(--bg)}
   #canvas{max-height:42vh}
 }
+.seg{display:flex;gap:6px;margin-top:6px}
+.seg .btn{flex:1;padding:9px 4px;font-size:.85rem}
+.seg .btn.active{background:var(--accent);border-color:var(--accent);color:#06101f;font-weight:600}

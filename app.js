@@ -12,6 +12,7 @@
   let img = null;      // source image element
   let base = null;     // canvas with the processed (scaled/grey/tone-adjusted) image
   let saveName = 'grid-pic';
+  let align = 'center'; // center | tr | bl
 
   const colName = n => { // 0 -> A, 25 -> Z, 26 -> AA
     let s = '';
@@ -113,11 +114,21 @@
     const n = parseInt(color.slice(1), 16);
     const lum = 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
     const outline = lum > 140 ? '#000' : '#fff';
-    ctx.fillStyle = color;
-    for (let i = 0; i <= cols; i++) ctx.fillRect(Math.round(i * (w - lw) / cols), 0, lw, h);
-    for (let j = 0; j <= rows; j++) ctx.fillRect(0, Math.round(j * (h - lw) / rows), w, lw);
 
-    const cw = w / cols, ch = h / rows;
+    // grid area: paper proportions, as large as fits inside the image
+    const { w: pw, h: ph } = paper();
+    const k = Math.min(w / pw, h / ph);
+    const gw = Math.round(pw * k), gh = Math.round(ph * k);
+    const gx = align === 'tr' ? w - gw : align === 'bl' ? 0 : Math.round((w - gw) / 2);
+    const gy = align === 'tr' ? 0 : align === 'bl' ? h - gh : Math.round((h - gh) / 2);
+    ctx.save();
+    ctx.translate(gx, gy);
+
+    ctx.fillStyle = color;
+    for (let i = 0; i <= cols; i++) ctx.fillRect(Math.round(i * (gw - lw) / cols), 0, lw, gh);
+    for (let j = 0; j <= rows; j++) ctx.fillRect(0, Math.round(j * (gh - lw) / rows), gw, lw);
+
+    const cw = gw / cols, ch = gh / rows;
     ctx.lineJoin = 'round';
     ctx.textBaseline = 'top';
     ctx.textAlign = 'left';
@@ -131,7 +142,6 @@
     }
     if ($('showDims').checked) {
       // dimensions of the top-left cell, drawn with dimension lines
-      const { w: pw, h: ph } = paper();
       const fs = Math.max(10, Math.min(cw, ch) * 0.13);
       const dl = Math.max(1.5, fs * 0.08);
       const m = Math.max(lw + 2, fs * 0.6);
@@ -141,13 +151,14 @@
       ctx.font = `600 ${fs}px system-ui, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'bottom';
-      outlinedText(fmt(pw / cols) + ' mm', (m + cw - m) / 2, yl - fs * 0.35, fs, color, outline);
+      outlinedText(fmt(pw / cols) + ' mm', cw / 2, yl - fs * 0.35, fs, color, outline);
       ctx.save();
-      ctx.translate(xl - fs * 0.35, (m + ch - m) / 2);
+      ctx.translate(xl - fs * 0.35, ch / 2);
       ctx.rotate(-Math.PI / 2);
       outlinedText(fmt(ph / rows) + ' mm', 0, 0, fs, color, outline);
       ctx.restore();
     }
+    ctx.restore();
   }
 
   /* ---------- controls ---------- */
@@ -160,7 +171,15 @@
   $('color').addEventListener('input', () => { syncSwatch(); draw(); });
   ['gray', 'contrast', 'brightness', 'saturation'].forEach(id => $(id).addEventListener('input', rebuild));
 
+  function setAlign(pos) {
+    align = pos;
+    document.querySelectorAll('#align .btn').forEach(b => b.classList.toggle('active', b.dataset.pos === pos));
+    draw();
+  }
+  $('align').addEventListener('click', e => { if (e.target.dataset.pos) setAlign(e.target.dataset.pos); });
+
   $('reset').addEventListener('click', () => {
+    setAlign('center');
     for (const [k, v] of Object.entries(defaults)) {
       const el = $(k);
       if (typeof v === 'boolean') el.checked = v; else el.value = v;
