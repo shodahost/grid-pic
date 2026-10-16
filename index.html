@@ -18,7 +18,18 @@
 
 <main>
   <div id="stage">
-    <canvas id="canvas" width="800" height="600"></canvas>
+    <div id="view">
+      <div id="viewport"><canvas id="canvas" width="800" height="600"></canvas></div>
+      <div id="tools">
+        <div class="seg" id="mode">
+          <button type="button" class="btn active" data-mode="grid" title="Jeden palec przesuwa siatkę">Siatka</button>
+          <button type="button" class="btn" data-mode="view" title="Jeden palec przesuwa powiększony obraz">Widok</button>
+        </div>
+        <button type="button" class="btn" id="zoomOut" aria-label="Oddal">−</button>
+        <button type="button" class="btn" id="zoomIn" aria-label="Przybliż">+</button>
+        <button type="button" class="btn" id="zoomReset" aria-label="Zresetuj powiększenie">1×</button>
+      </div>
+    </div>
     <p id="hint">Wybierz lub przeciągnij tutaj zdjęcie albo grafikę, aby nałożyć siatkę.</p>
   </div>
 

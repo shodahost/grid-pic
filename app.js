@@ -12,7 +12,10 @@
   let img = null;      // source image element
   let base = null;     // canvas with the processed (scaled/grey/tone-adjusted) image
   let saveName = 'grid-pic';
-  let align = 'center'; // center | tr | bl
+  // grid position as a fraction (0..1) of the free space inside the image
+  let fx = 0.5, fy = 0.5;
+  let view = { s: 1, tx: 0, ty: 0 };  // zoom/pan of the preview only (not saved)
+  let mode = 'grid';                  // what one finger does: grid | view
 
   const colName = n => { // 0 -> A, 25 -> Z, 26 -> AA
     let s = '';
@@ -89,6 +92,12 @@
     ctx.fillStyle = color; ctx.fillText(t, x, y);
   }
 
+  function gridSize(w, h) {
+    const { w: pw, h: ph } = paper();
+    const k = Math.min(w / pw, h / ph);
+    return { gw: Math.round(pw * k), gh: Math.round(ph * k) };
+  }
+
   function draw() {
     if (!base) return;
     const w = base.width, h = base.height;
@@ -103,10 +112,8 @@
 
     // grid area: paper proportions, as large as fits inside the image
     const { w: pw, h: ph } = paper();
-    const k = Math.min(w / pw, h / ph);
-    const gw = Math.round(pw * k), gh = Math.round(ph * k);
-    const gx = align === 'tr' ? w - gw : align === 'bl' ? 0 : Math.round((w - gw) / 2);
-    const gy = align === 'tr' ? 0 : align === 'bl' ? h - gh : Math.round((h - gh) / 2);
+    const { gw, gh } = gridSize(w, h);
+    const gx = Math.round(fx * (w - gw)), gy = Math.round(fy * (h - gh));
     ctx.save();
     ctx.translate(gx, gy);
 
@@ -119,7 +126,7 @@
     ctx.textBaseline = 'top';
     ctx.textAlign = 'left';
     if ($('labels').checked) {
-      const fs = Math.max(10, Math.min(cw, ch) * 0.2);
+      const fs = Math.max(9, Math.min(cw, ch) * 0.13);
       ctx.font = `600 ${fs}px system-ui, sans-serif`;
       const pad = lw + fs * 0.25;
       for (let j = 0; j < rows; j++)
@@ -156,15 +163,16 @@
   $('color').addEventListener('input', () => { syncSwatch(); draw(); });
   ['gray', 'contrast', 'brightness', 'saturation'].forEach(id => $(id).addEventListener('input', rebuild));
 
+  const ALIGN = { center: [0.5, 0.5], tr: [1, 0], bl: [0, 1] };
   function setAlign(pos) {
-    align = pos;
+    [fx, fy] = ALIGN[pos];
     document.querySelectorAll('#align .btn').forEach(b => b.classList.toggle('active', b.dataset.pos === pos));
     draw();
   }
   $('align').addEventListener('click', e => { if (e.target.dataset.pos) setAlign(e.target.dataset.pos); });
 
   $('reset').addEventListener('click', () => {
-    setAlign('center');
+    setAlign('center'); resetView(); setMode('grid');
     for (const [k, v] of Object.entries(defaults)) {
       const el = $(k);
       if (typeof v === 'boolean') el.checked = v; else el.value = v;
@@ -184,6 +192,7 @@
       img = im;
       $('stage').classList.add('has-img');
       $('save').disabled = false;
+      resetView();
       buildBase(); draw();
     };
     im.onerror = () => { URL.revokeObjectURL(url); alert('Nie udało się wczytać tego pliku.'); };
@@ -203,6 +212,99 @@
     e.preventDefault(); depth = 0; document.body.classList.remove('dragging');
     loadFile([...e.dataTransfer.files].find(f => f.type.startsWith('image/')));
   });
+
+  /* ---------- zoom, pan and dragging the grid ---------- */
+  const vp = $('viewport');
+  const clampView = () => {
+    const W = canvas.offsetWidth, H = canvas.offsetHeight;
+    view.s = Math.min(8, Math.max(1, view.s));
+    view.tx = Math.min(0, Math.max(W * (1 - view.s), view.tx));
+    view.ty = Math.min(0, Math.max(H * (1 - view.s), view.ty));
+  };
+  const applyView = () => {
+    clampView();
+    canvas.style.transform = `translate(${view.tx}px,${view.ty}px) scale(${view.s})`;
+  };
+  function resetView() { view = { s: 1, tx: 0, ty: 0 }; applyView(); }
+  function zoomAt(cx, cy, s2) {   // keep the content point under (cx, cy) fixed
+    const px = (cx - view.tx) / view.s, py = (cy - view.ty) / view.s;
+    view.s = s2; view.tx = cx - px * view.s; view.ty = cy - py * view.s;
+    applyView();
+  }
+  function setMode(m) {
+    mode = m;
+    document.querySelectorAll('#mode .btn').forEach(b => b.classList.toggle('active', b.dataset.mode === m));
+    vp.classList.toggle('pan', m === 'view');
+  }
+  $('mode').addEventListener('click', e => { if (e.target.dataset.mode) setMode(e.target.dataset.mode); });
+  const zoomCenter = f => zoomAt(canvas.offsetWidth / 2, canvas.offsetHeight / 2, Math.min(8, Math.max(1, view.s * f)));
+  $('zoomIn').addEventListener('click', () => zoomCenter(1.5));
+  $('zoomOut').addEventListener('click', () => zoomCenter(1 / 1.5));
+  $('zoomReset').addEventListener('click', resetView);
+  window.addEventListener('resize', applyView);
+
+  const local = e => { const r = vp.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  vp.addEventListener('wheel', e => {
+    e.preventDefault();
+    const p = local(e);
+    zoomAt(p.x, p.y, Math.min(8, Math.max(1, view.s * Math.exp(-e.deltaY * 0.0015))));
+  }, { passive: false });
+
+  const ptrs = new Map();
+  let drag = null, pinch = null, raf = 0;
+  const redraw1 = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); };
+  const startDrag = (p) => {
+    if (!base) return;
+    const { gw, gh } = gridSize(base.width, base.height);
+    drag = { x: p.x, y: p.y, gx: fx * (base.width - gw), gy: fy * (base.height - gh),
+             vx: view.tx, vy: view.ty };
+  };
+  vp.addEventListener('pointerdown', e => {
+    if (!base) return;
+    vp.setPointerCapture(e.pointerId);
+    ptrs.set(e.pointerId, local(e));
+    if (ptrs.size === 1) startDrag(ptrs.get(e.pointerId));
+    else if (ptrs.size === 2) {
+      drag = null;
+      const [a, b] = [...ptrs.values()];
+      pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, s: view.s,
+                cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2, tx: view.tx, ty: view.ty };
+    }
+  });
+  vp.addEventListener('pointermove', e => {
+    if (!ptrs.has(e.pointerId)) return;
+    const p = local(e);
+    ptrs.set(e.pointerId, p);
+    if (ptrs.size >= 2 && pinch) {
+      const [a, b] = [...ptrs.values()];
+      const s = Math.min(8, Math.max(1, pinch.s * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d));
+      const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
+      const px = (pinch.cx - pinch.tx) / pinch.s, py = (pinch.cy - pinch.ty) / pinch.s;
+      view.s = s; view.tx = cx - px * s; view.ty = cy - py * s;
+      applyView();
+    } else if (drag) {
+      const dx = p.x - drag.x, dy = p.y - drag.y;
+      if (mode === 'view') {
+        view.tx = drag.vx + dx; view.ty = drag.vy + dy; applyView();
+      } else {
+        const f = canvas.width / (canvas.offsetWidth * view.s);   // preview px -> image px
+        const { gw, gh } = gridSize(base.width, base.height);
+        const fw = base.width - gw, fh = base.height - gh;
+        if (fw > 0) fx = Math.min(1, Math.max(0, (drag.gx + dx * f) / fw));
+        if (fh > 0) fy = Math.min(1, Math.max(0, (drag.gy + dy * f) / fh));
+        document.querySelectorAll('#align .btn').forEach(b => b.classList.remove('active'));
+        redraw1();
+      }
+    }
+  });
+  const endPtr = e => {
+    ptrs.delete(e.pointerId);
+    pinch = null;
+    drag = null;
+    if (ptrs.size === 1) startDrag(ptrs.values().next().value);  // continue with the remaining finger
+  };
+  vp.addEventListener('pointerup', endPtr);
+  vp.addEventListener('pointercancel', endPtr);
 
   /* ---------- saving ---------- */
   $('save').addEventListener('click', () => {

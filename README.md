@@ -9,6 +9,7 @@ Proste narzędzie w przeglądarce (zoptymalizowane pod telefon): wczytaj zdjęci
 - skala szarości oraz suwaki kontrastu, jasności i nasycenia obrazu pod siatką
 - format papieru (A8–A3, własny wymiar w mm): siatka ma proporcje papieru, jest możliwie największa w obrębie obrazu i da się ją ustawić na środku, w prawym górnym lub lewym dolnym rogu
 - podgląd wymiaru jednej kratki w mm na obrazie
+- przeciąganie siatki palcem (tryb „Siatka”) oraz przybliżanie podglądu: szczypanie dwoma palcami, kółko myszy lub przyciski +/−; tryb „Widok” przesuwa powiększony obraz (powiększenie nie wpływa na zapisany plik)
 - wczytywanie przez wybór pliku lub przeciągnięcie na okno
 - zapis do PNG w pełnej rozdzielczości (na telefonie przez arkusz udostępniania → „Zapisz obraz”)
 
